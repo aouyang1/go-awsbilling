@@ -105,7 +105,7 @@ func (r *Report) AddLineItem(l *LineItem) {
 				return
 			}
 		}
-		lids = append(lids, l)
+		r.LineItems[l.Start] = append(r.LineItems[l.Start], l)
 		return
 	}
 
@@ -137,18 +137,23 @@ func (r *Report) AddLineItem(l *LineItem) {
 }
 
 func (r Report) FilterByTime(s, e time.Time) []*LineItem {
-	startIdx := 0
 	endIdx := len(r.TimePts)
-	var startFound, endFound bool
 	for i, t := range r.TimePts {
-		if startFound && endFound {
-			break
-		}
-		if s.After(t) {
+		if t.After(s) {
 			endIdx = i
 			break
 		}
 	}
+	var l []*LineItem
+	for i := 0; i < endIdx; i++ {
+		items := r.LineItems[r.TimePts[i]]
+		for _, item := range items {
+			if !item.End.Before(s) {
+				l = append(l, item)
+			}
+		}
+	}
+	return l
 }
 
 type LineItem struct {
@@ -286,5 +291,9 @@ func main() {
 	if err != nil {
 		logger.Fatal(err)
 	}
-	fmt.Println(report)
+	items := report.FilterByTime(
+		time.Date(2020, time.May, 3, 0, 0, 0, 0, time.UTC),
+		time.Date(2020, time.May, 5, 0, 0, 0, 0, time.UTC),
+	)
+	fmt.Println(len(items))
 }
