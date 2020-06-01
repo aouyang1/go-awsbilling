@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -138,8 +139,8 @@ func (r *Report) AddLineItem(l *LineItem) {
 
 func (r Report) FilterByTime(s, e time.Time) []*LineItem {
 	endIdx := len(r.TimePts)
-	for i, t := range r.TimePts {
-		if t.After(s) {
+	for i, itemStart := range r.TimePts {
+		if itemStart.After(e) {
 			endIdx = i
 			break
 		}
@@ -148,12 +149,48 @@ func (r Report) FilterByTime(s, e time.Time) []*LineItem {
 	for i := 0; i < endIdx; i++ {
 		items := r.LineItems[r.TimePts[i]]
 		for _, item := range items {
-			if !item.End.Before(s) {
+			if item.End.After(s) {
 				l = append(l, item)
 			}
 		}
 	}
 	return l
+}
+
+func (r Report) GroupBy(fields []string, s, e time.Time) map[string]float64 {
+	items := r.FilterByTime(s, e)
+	res := make(map[string]float64)
+	for _, item := range items {
+		var keyParts []string
+		for _, field := range fields {
+			switch field {
+			case "lineItem/LineItemType":
+				keyParts = append(keyParts, item.LineItemType)
+			case "lineItem/Operation":
+				keyParts = append(keyParts, item.Operation)
+			case "lineItem/ProductCode":
+				keyParts = append(keyParts, item.ProductCode)
+			case "lineItem/ResourceId":
+				keyParts = append(keyParts, item.ResourceID)
+			case "lineItem/TaxType":
+				keyParts = append(keyParts, item.TaxType)
+			case "lineItem/UsageAccountId":
+				keyParts = append(keyParts, item.UsageAccountID)
+			case "lineItem/UsageType":
+				keyParts = append(keyParts, item.UsageType)
+			case "bill/PayerAccountId":
+				keyParts = append(keyParts, strconv.FormatUint(item.Bill.PayerAccountID, 10))
+			default:
+				logger.Printf("Unsupported field to group by, %s\n", field)
+			}
+		}
+		key := strings.Join(keyParts, "_")
+		if item.UnblendedCost > 0 {
+			res[key] += item.UnblendedCost
+		}
+	}
+
+	return res
 }
 
 type LineItem struct {
@@ -291,9 +328,15 @@ func main() {
 	if err != nil {
 		logger.Fatal(err)
 	}
-	items := report.FilterByTime(
-		time.Date(2020, time.May, 3, 0, 0, 0, 0, time.UTC),
-		time.Date(2020, time.May, 5, 0, 0, 0, 0, time.UTC),
+	res := report.GroupBy(
+		[]string{
+			"lineItem/ProductCode",
+			"lineItem/Operation",
+		},
+		time.Date(2020, time.May, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2020, time.June, 1, 0, 0, 0, 0, time.UTC),
 	)
-	fmt.Println(len(items))
+
+	out, _ := json.MarshalIndent(res, "", "  ")
+	fmt.Println(string(out))
 }
